@@ -1,0 +1,49 @@
+I want:
+when I press a shortcut
+the selected / cursor-word is copied
+a vscode webview opens https://code.visualstudio.com/api/extension-guides/webview
+with documentation (cppref, boost, etc) for that term
+
+existing solutions:
+https://devdocs.io/
+    web app with a large libary of docs
+    source https://github.com/freeCodeCamp/devdocs
+    "set of normalized HTML partials and two JSON files (index + offline data)"
+        https://github.com/freeCodeCamp/devdocs#scraper
+    not usable in vscode (opens a separate browser window)
+    actually this extension probably works
+        https://marketplace.visualstudio.com/items?itemName=devdocs-adapter.devdocs-adapter
+    does do fuzzy searching
+dash ecosystem
+    "Docsets are essentially just a folder containing the HTML documentation and a SQLite database that indexes the files."
+        https://kapeli.com/docsets
+    https://kapeli.com/dash
+        macos app with a standard docs format, and large library of docs
+    https://marketplace.visualstudio.com/items?itemName=deerawan.vscode-dash
+        vscode extension just opens the native app (dash, zeal, ...), rather than in vscode webview
+    https://zealdocs.org/usage.html
+        linux equivalent of dash, same standard docs format and library
+        doesn't do fuzzy searching
+
+missing docs:
+    boost
+    ibis
+    plotly
+
+fzf is great
+
+maybe the filename (e.g. /cpp/std/vector.html) is enough?
+or maybe we need to strip the html to plain text and fzf on the contents
+or maybe we could use doxygen tagfiles (for c/c++ at least)?
+
+vscode features:
+webview for html docs (basically all docs are in html format)
+context menu for "open in docs"
+"open in docs" finds the item under the cursor, translates it into a C++ namespace, then looks up the file using doxygen???
+OR
+terminal fzf search of "doctags" (the "class list" from doxygen, e.g. https://eigen.tuxfamily.org/dox/annotated.html)
+
+all docs have html tree
+(almost) all c/c++ docs have a doxygen xml index and class list
+
+all (dash) docs have an sqlite index
