@@ -124,7 +124,7 @@ def extract_tgz(file: Path) -> Path:
     return dir
 
 
-def download_docsets(update: bool = False) -> None:
+def download_docsets(download_all: bool = False) -> None:
     config_file = xdg_config_home() / "docs-viewer/config.toml"
     with open(config_file, "rb") as file:
         config = tomllib.load(file)
@@ -133,7 +133,7 @@ def download_docsets(update: bool = False) -> None:
     if not data_dir.exists():
         data_dir.mkdir(parents=True)
     for docset in docsets:
-        if not (data_dir / docset).exists() or update:
+        if not (data_dir / docset).exists() or download_all:
             file = download_file(f"https://kapeli.com/feeds/{docset}.tgz", data_dir)
             extract_tgz(file)
 
@@ -145,9 +145,12 @@ def open_as_markdown(filename: str) -> str:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--update", action="store_true")
+    parser.add_argument("--download-new", action="store_true")
+    parser.add_argument("--download-all", action="store_true")
     args = parser.parse_args()
-    download_docsets(args.update)
+    if args.download_new:
+        download_docsets(args.download_all)
+        exit()
     ds = DocSet("C")
     ds.search("test")
     # app = DocsViewer()
