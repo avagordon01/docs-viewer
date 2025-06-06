@@ -13,6 +13,58 @@ from textual.widgets import Input, Markdown, OptionList
 from xdg_base_dirs import xdg_config_home, xdg_data_home
 
 
+class DocSet:
+    def __init__(self, docset: str):
+        self.data_dir = xdg_data_home() / "docs-viewer/docsets"
+        self.dbfile = (
+            self.data_dir / f"{docset}/{docset}.docset/Contents/Resources/docSet.dsidx"
+        )
+        self.db = sqlite3.connect(self.dbfile)
+
+    def get_all_tokens(self) -> List[tuple[int, int]]:
+        cur = self.db.cursor()
+        res = cur.execute(
+            "select z_pk, zmetainformation, ztokenname from ztoken limit 20"
+        )
+        return res.fetchall()
+
+    def get_all_paths(self) -> List[tuple[int, int]]:
+        cur = self.db.cursor()
+        res = cur.execute("select z_pk, zpath from zfilepath")
+        return res.fetchall()
+
+    def search(self, search_str: str) -> List[tuple[str, Path]]:
+        # TODO
+        cur = self.db.cursor()
+        res = cur.execute(
+            f"""
+            select *, -length(name) as score
+            from search_index_view
+            where name like "%{search_str}%"
+        """
+        )
+        return res.fetchall()
+
+    def create_index(self) -> None:
+        cur = self.db.cursor()
+        cur.execute("""
+            create view if not exists search_index_view as
+            select
+                ztoken.ztokenname as name,
+                ztokentype.ztypename as type,
+                zfilepath.zpath as path,
+                ztokenmetainformation.zanchor as anchor
+            from ztoken
+            inner join ztokenmetainformation
+                on ztoken.zmetainformation = ztokenmetainformation.z_pk
+            inner join zfilepath
+                on ztokenmetainformation.zfile = zfilepath.z_pk
+            inner join ztokentype
+                on ztoken.ztokentype = ztokentype.z_pk
+            order by -length(name)
+        """)
+
+
 class DocsViewer(App):
     CSS = """
     Screen {
@@ -44,6 +96,9 @@ class DocsViewer(App):
         Binding("enter", "open()", "open", show=False, priority=True),
     ]
 
+    def set_ds(self, ds: DocSet):
+        self.ds = ds
+
     def compose(self) -> ComposeResult:
         yield OptionList()
         yield Markdown()
@@ -52,11 +107,6 @@ class DocsViewer(App):
     def on_ready(self) -> None:
         self.query_one(Input).focus()
         # TODO move bindings to top-level
-        self.update_search()
-
-    def update_search(self) -> None:
-        self.query_one(Input)
-        self.query_one(Markdown).update("#test")
 
     def on_option_list_option_highlighted(
         self, event: OptionList.OptionHighlighted
@@ -67,41 +117,18 @@ class DocsViewer(App):
         md.update(highlighted)
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        search = event.value
-        # TODO query sqlite docset
+        search_str = event.value
+        results = [name for (name, _, _, _, _) in self.ds.search(search_str)]
         ol = self.query_one(OptionList)
-        ol.add_option(search)
-        self.update_search()
+        ol.clear_options()
+        ol.add_options(results)
+        ol.action_last()
 
     def action_open(self) -> None:
         ol = self.query_one(OptionList)
         chosen_value = ol.get_option_at_index(ol.highlighted).id
         md = self.query_one(Markdown)
         md.update(chosen_value)
-
-
-class DocSet:
-    def __init__(self, docset: str):
-        self.data_dir = xdg_data_home() / "docs-viewer/docsets"
-        self.dbfile = (
-            self.data_dir / f"{docset}/{docset}.docset/Contents/Resources/docSet.dsidx"
-        )
-        self.db = sqlite3.connect(self.dbfile)
-
-    def get_all_tokens(self) -> List[tuple[int, int]]:
-        cur = self.db.cursor()
-        res = cur.execute("select z_pk, zmetainformation, ztokenname from ztoken")
-        return res.fetchall()
-
-    def get_all_paths(self) -> List[tuple[int, int]]:
-        cur = self.db.cursor()
-        res = cur.execute("select z_pk, zpath from zfilepath")
-        return res.fetchall()
-
-    def search(self, search: str) -> List[tuple[str, Path]]:
-        # TODO
-        print(self.get_all_tokens())
-        return []
 
 
 def download_file(url: str, dir: Path) -> Path:
@@ -151,7 +178,8 @@ if __name__ == "__main__":
     if args.download_new:
         download_docsets(args.download_all)
         exit()
-    ds = DocSet("C")
-    ds.search("test")
-    # app = DocsViewer()
-    # app.run()
+    ds = DocSet("C++")
+    ds.create_index()
+    app = DocsViewer()
+    app.set_ds(ds)
+    app.run()
