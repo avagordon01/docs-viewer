@@ -94,6 +94,8 @@ class DocsViewer(App):
         Binding("ctrl+c", "quit", "Quit", show=False, priority=True),
         Binding("escape", "quit", "Quit", show=False, priority=True),
         Binding("enter", "open()", "open", show=False, priority=True),
+        Binding("up", "up()", "up", show=False, priority=True),
+        Binding("down", "down()", "down", show=False, priority=True),
     ]
 
     def set_ds(self, ds: DocSet):
@@ -124,7 +126,16 @@ class DocsViewer(App):
         ol.add_options(results)
         ol.action_last()
 
+    def action_up(self) -> None:
+        ol = self.query_one(OptionList)
+        ol.action_cursor_up()
+
+    def action_down(self) -> None:
+        ol = self.query_one(OptionList)
+        ol.action_cursor_down()
+
     def action_open(self) -> None:
+        # TODO open current page in browser?
         ol = self.query_one(OptionList)
         chosen_value = ol.get_option_at_index(ol.highlighted).id
         md = self.query_one(Markdown)
