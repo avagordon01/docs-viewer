@@ -1,8 +1,10 @@
 import argparse
 import shutil
 import sqlite3
+import subprocess
 import tarfile
 import tomllib
+import urllib.parse
 from pathlib import Path
 from typing import List
 
@@ -12,13 +14,14 @@ from textual.app import App, Binding, ComposeResult
 from textual.widgets import Input, Markdown, OptionList
 from xdg_base_dirs import xdg_config_home, xdg_data_home
 
+data_dir = xdg_data_home() / "docs-viewer/docsets"
+config_file = xdg_config_home() / "docs-viewer/config.toml"
+
 
 class DocSet:
     def __init__(self, docset: str):
-        self.data_dir = xdg_data_home() / "docs-viewer/docsets"
-        self.dbfile = (
-            self.data_dir / f"{docset}/{docset}.docset/Contents/Resources/docSet.dsidx"
-        )
+        self.docset_dir = data_dir / f"{docset}/{docset}.docset/Contents/Resources"
+        self.dbfile = data_dir / f"{self.docset_dir}/docSet.dsidx"
         self.db = sqlite3.connect(self.dbfile)
 
     def get_all_tokens(self) -> List[tuple[int, int]]:
@@ -33,8 +36,16 @@ class DocSet:
         res = cur.execute("select z_pk, zpath from zfilepath")
         return res.fetchall()
 
+    def process_path(self, path: str) -> tuple[str, str]:
+        path = path[path.rfind(">") + 1 :]
+        path = urllib.parse.unquote(path)
+        url = f"https://{path}"
+        path = f"{self.docset_dir}/Documents/{path}"
+        return (path, url)
+
     def search(self, search_str: str) -> List[tuple[str, Path]]:
-        # TODO
+        # TODO better search function
+        # sqlite fts5 trigrams?
         cur = self.db.cursor()
         res = cur.execute(
             f"""
@@ -43,7 +54,9 @@ class DocSet:
             where name like "%{search_str}%"
         """
         )
-        return res.fetchall()
+        return [
+            (name, *self.process_path(path)) for (name, _, path, _, _) in res.fetchall()
+        ]
 
     def create_index(self) -> None:
         cur = self.db.cursor()
@@ -89,9 +102,6 @@ class DocsViewer(App):
     }
     """
     BINDINGS = [
-        Binding("ctrl+c", "quit", "Quit", show=False, priority=True),
-        Binding("ctrl+c", "quit", "Quit", show=False, priority=True),
-        Binding("ctrl+c", "quit", "Quit", show=False, priority=True),
         Binding("escape", "quit", "Quit", show=False, priority=True),
         Binding("enter", "open()", "open", show=False, priority=True),
         Binding("up", "up()", "up", show=False, priority=True),
@@ -102,28 +112,28 @@ class DocsViewer(App):
         self.ds = ds
 
     def compose(self) -> ComposeResult:
+        yield Input(placeholder="search")
         yield OptionList()
         yield Markdown()
-        yield Input(placeholder="search")
-
-    def on_ready(self) -> None:
-        self.query_one(Input).focus()
-        # TODO move bindings to top-level
 
     def on_option_list_option_highlighted(
         self, event: OptionList.OptionHighlighted
     ) -> None:
         highlighted = event.option.prompt
-        # TODO render markdown file
+        path, _ = self.options[highlighted]
+        markdown = open_as_markdown(path)
         md = self.query_one(Markdown)
-        md.update(highlighted)
+        md.update(markdown)
 
     def on_input_changed(self, event: Input.Changed) -> None:
         search_str = event.value
-        results = [name for (name, _, _, _, _) in self.ds.search(search_str)]
+        results = {
+            name: (path, url) for (name, path, url) in self.ds.search(search_str)
+        }
+        self.options = results
         ol = self.query_one(OptionList)
         ol.clear_options()
-        ol.add_options(results)
+        ol.add_options(results.keys())
         ol.action_last()
 
     def action_up(self) -> None:
@@ -135,11 +145,10 @@ class DocsViewer(App):
         ol.action_cursor_down()
 
     def action_open(self) -> None:
-        # TODO open current page in browser?
         ol = self.query_one(OptionList)
-        chosen_value = ol.get_option_at_index(ol.highlighted).id
-        md = self.query_one(Markdown)
-        md.update(chosen_value)
+        highlighted = ol.get_option_at_index(ol.highlighted).prompt
+        _, url = self.options[highlighted]
+        subprocess.run(["xdg-open", url])
 
 
 def download_file(url: str, dir: Path) -> Path:
@@ -163,11 +172,9 @@ def extract_tgz(file: Path) -> Path:
 
 
 def download_docsets(download_all: bool = False) -> None:
-    config_file = xdg_config_home() / "docs-viewer/config.toml"
     with open(config_file, "rb") as file:
         config = tomllib.load(file)
     docsets = config["docsets"]
-    data_dir = xdg_data_home() / "docs-viewer/docsets"
     if not data_dir.exists():
         data_dir.mkdir(parents=True)
     for docset in docsets:
@@ -177,6 +184,11 @@ def download_docsets(download_all: bool = False) -> None:
 
 
 def open_as_markdown(filename: str) -> str:
+    # TODO this HTML -> markdown conversion looks like garbage
+    # - doesn't strip "display: none" elements
+    # - large code blocks have vertical scroll for no reason
+    # - extra [[edit]](...) cruft everywhere
+    # maybe a textual HTML widget would be better
     with open(filename) as file:
         return convert_to_markdown(file.read())
 
