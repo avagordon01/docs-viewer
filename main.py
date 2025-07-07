@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import List
 
 import requests
+from bs4 import BeautifulSoup
 from html_to_markdown import convert_to_markdown
+from readabilipy import simple_tree_from_html_string
 from textual.app import App, Binding, ComposeResult
 from textual.widgets import Input, Markdown, OptionList
 from xdg_base_dirs import xdg_config_home, xdg_data_home
@@ -184,20 +186,43 @@ def download_docsets(download_all: bool = False) -> None:
 
 
 def open_as_markdown(filename: str) -> str:
+    # TODO this is also a little bit slow, offline we could convert all .html to .md
     # TODO this HTML -> markdown conversion looks like garbage
     # - doesn't strip "display: none" elements
     # - large code blocks have vertical scroll for no reason
     # - extra [[edit]](...) cruft everywhere
     # maybe a textual HTML widget would be better
+    # TODO maybe use https://github.com/alan-turing-institute/ReadabiliPy
     with open(filename) as file:
-        return convert_to_markdown(file.read())
+        html = file.read()
+        html_simple_parsed = simple_tree_from_html_string(html)
+        html_parsed = BeautifulSoup(html, "html.parser")
+        delete_selectors = [
+            'div[class*="nav"]',
+            'div[class="noprint"]',
+        ]
+        for delete_selector in delete_selectors:
+            for tag in html_parsed.css.select(delete_selector):
+                print("removing tag!")
+                tag.decompose()
+        html_simple = str(html_parsed)
+        markdown = convert_to_markdown(html_simple)
+        return markdown
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--download-new", action="store_true")
     parser.add_argument("--download-all", action="store_true")
+    parser.add_argument("--test", action="store_true")
     args = parser.parse_args()
+    if args.test:
+        print(
+            open_as_markdown(
+                "/home/ava/.local/share/docs-viewer/docsets/C++/C++.docset/Contents/Resources/Documents/en.cppreference.com/w/cpp/container/vector_bool.html"
+            )
+        )
+        exit()
     if args.download_new:
         download_docsets(args.download_all)
         exit()
